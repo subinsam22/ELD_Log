@@ -30,7 +30,7 @@ DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
-    '.render.com',      # Change this to your provider's domain suffix
+    'https://logitrack-b7o5.onrender.com',      # Change this to your provider's domain suffix
     
 ]
 
