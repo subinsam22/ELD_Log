@@ -1,0 +1,1 @@
+web: gunicorn ELD_Log.wsgi --log-file -
