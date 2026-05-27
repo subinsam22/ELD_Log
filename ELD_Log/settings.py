@@ -49,7 +49,7 @@ INSTALLED_APPS = [
 ]
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-      # Replace with your actual Vercel URL later
+    "https://logitrack-frontend-xygm.onrender.com"
 ]
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
