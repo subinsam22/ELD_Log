@@ -1,1 +1,1 @@
-web: gunicorn ELD_Log.wsgi --log-file -
+web: gunicorn ELD_Log.wsgi:application --log-file -
