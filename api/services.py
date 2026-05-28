@@ -17,11 +17,8 @@ PICKUP_DROPOFF_DURATION_MIN = 60
 class HOSPlanner:
     def __init__(self, start_coord, pickup_coord, dropoff_coord,
                  cycle_used_hours: float, leg_distances: List[float],
-                 start_datetime: datetime = None):
-        """
-        :param cycle_used_hours: total on‑duty hours already accumulated in the last 8 days
-                                 before the trip starts. Will be deducted from 70h budget.
-        """
+                 start_datetime: datetime = datetime.now()):
+        
         self.start_coord = start_coord
         self.pickup_coord = pickup_coord
         self.dropoff_coord = dropoff_coord
@@ -33,10 +30,8 @@ class HOSPlanner:
         self.events = self._build_event_list()
 
     def _build_event_list(self) -> List[Tuple[str, float, int, float]]:
-        """
-        Returns list of (type, duration_min, leg_index, miles_covered).
-        Types: 'drive', 'pickup', 'dropoff', 'fuel', 'break'
-        """
+        
+        
         events = []
         # Leg 0: start -> pickup
         leg0_miles = self.leg_distances[0]
@@ -55,7 +50,7 @@ class HOSPlanner:
         return events
 
     def _calculate_fuel_stops_on_leg(self, leg_idx: int, leg_miles: float) -> List[float]:
-        """Returns list of miles from leg start where a fuel stop is needed."""
+        
         stops = []
         cumulative = 0.0
         while cumulative + FUEL_INTERVAL_MILES < leg_miles:
@@ -65,7 +60,7 @@ class HOSPlanner:
 
     def _split_leg_into_events(self, leg_idx: int, leg_miles: float,
                                fuel_miles: List[float]) -> List[Tuple[str, float, int, float]]:
-        """Split a leg into drive segments separated by fuel stops."""
+        
         events = []
         prev = 0.0
         for fuel_mi in fuel_miles:
@@ -81,7 +76,7 @@ class HOSPlanner:
         return events
 
     def _insert_required_breaks(self, events: List[Tuple]) -> List[Tuple]:
-        """Insert 30‑min breaks after every 8 cumulative driving hours."""
+        
         new_events = []
         cum_drive_min = 0.0
         for ev in events:
@@ -113,14 +108,8 @@ class HOSPlanner:
                 new_events.append(ev)
         return new_events
 
-    def generate_daily_logs(self) -> Tuple[List[Dict[str, Any]], bool]:
-        """
-        Generates daily logs respecting:
-        - rolling 70h/8d window (with initial cycle_used_min deducted)
-        - 11h driving / 14h window per shift
-        - mandatory 10h off between shifts 
-        - correct splitting of events across days
-        """
+    def generate_daily_logs(self) :
+        
         daily_logs = []
         remaining_events = self.events.copy()
         flag_limit = False
@@ -143,7 +132,7 @@ class HOSPlanner:
         day_date = self.start_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
         previous_shift_end_min = None   # minutes within that day
         next_shift_start_min = None     # for the next day
-
+        shift_start_min= 0
         while remaining_events and remaining_budget_min > 0:
             # --- Determine shift start time ---
             if day_idx == 0:
@@ -275,7 +264,7 @@ class HOSPlanner:
                 stops.append({"type": ev_type, "distance": cumulative_miles})
         return stops
     def _build_log_sheet(self, date, timeline, drive_min, on_duty_min, total_miles):
-        """Convert timeline to ELD grid segments and summary."""
+        
         # timeline entries: (start_min, status, duration_min, miles, subtype)
         # Build a sorted list of status changes
         changes = [(0, "off_duty")]   # start of day
