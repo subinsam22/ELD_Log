@@ -52,6 +52,18 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "https://logitrack-frontend-xygm.onrender.com"
 ]
+
+REST_FRAMEWORK = {
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',  # For anonymous users
+        'rest_framework.throttling.UserRateThrottle',  # For authenticated users (if any)
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '10/minute',      # Anonymous users: 10 requests per minute
+        'user': '30/minute',      # Authenticated users: 30 requests per minute
+        'plan-trip': '5/minute',  # Custom throttle for the plan-trip endpoint
+    }
+}
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',

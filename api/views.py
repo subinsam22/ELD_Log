@@ -1,13 +1,15 @@
 from datetime import datetime, timedelta
-from rest_framework.decorators import api_view
+from .throttles import PlanTripRateThrottle
+from rest_framework.decorators import api_view,throttle_classes
 from rest_framework.response import Response
 from .serializers import TripPlanSerializer
 from .route_service import RouteService
 from .services import HOSPlanner   # updated class
-
+from rest_framework.throttling import AnonRateThrottle
 route_service = RouteService()
 
 @api_view(['POST'])
+@throttle_classes([AnonRateThrottle, PlanTripRateThrottle])
 def plan_trip(request):
     serializer = TripPlanSerializer(data=request.data)
     if not serializer.is_valid():
@@ -38,7 +40,7 @@ def plan_trip(request):
     )
     logs,flag_limit = planner.generate_daily_logs()
     stops = planner.get_route_stops()
-    # Get route geometry (with graceful failure)
+    
     geometry = route_service.get_full_route_geometry([cur_coord, pick_coord, drop_coord])
     logs_stops = []
     for i, log in enumerate(logs):
@@ -50,7 +52,7 @@ def plan_trip(request):
         else:
             logs_stops.append({"type": "break","distance": log["total_miles"] + logs_stops[-1]["distance"]})
     stops = sorted(stops + logs_stops, key=lambda x: x["distance"])
-    print(stops)
+    
     return Response({
         "logs": logs,
         "flag_limit": flag_limit,

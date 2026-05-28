@@ -146,9 +146,7 @@ class HOSPlanner:
                 "warning": f"Already over 70h by {-remaining_budget_min/60:.1f}h"
             }], True  
 
-        # Absolute minutes from the trip start (midnight of first day)
-        absolute_minutes = 0
-        current_shift_start_abs = 6 * 60   # first shift starts at 6:00 on day 0
+        current_shift_start_abs = 6 * 60   
         day_date = self.start_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
         day_idx = 0
 
