@@ -47,8 +47,29 @@ class HOSPlanner:
 
         # Insert mandatory 30‑min breaks after every 8h of driving
         events = self._insert_required_breaks(events)
+        events = self._split_long_drives(events)
         return events
-
+    def _split_long_drives(self, events):
+    
+        new_events = []
+        for ev in events:
+            if ev[0] == 'drive' and ev[1] > BREAK_AFTER_DRIVE_HOURS * 60:
+                dur_min = ev[1]
+                miles = ev[3]
+                leg_idx = ev[2]
+                remaining_min = dur_min
+                remaining_miles = miles
+                while remaining_min > BREAK_AFTER_DRIVE_HOURS * 60:
+                    new_events.append(('drive', BREAK_AFTER_DRIVE_HOURS * 60, leg_idx, 
+                                    miles * (BREAK_AFTER_DRIVE_HOURS * 60 / dur_min)))
+                    new_events.append(('break', BREAK_DURATION_MIN, leg_idx, 0.0))
+                    remaining_min -= BREAK_AFTER_DRIVE_HOURS * 60
+                    remaining_miles -= miles * (BREAK_AFTER_DRIVE_HOURS * 60 / dur_min)
+                if remaining_min > 0:
+                    new_events.append(('drive', remaining_min, leg_idx, remaining_miles))
+            else:
+                new_events.append(ev)
+        return new_events
     def _calculate_fuel_stops_on_leg(self, leg_idx: int, leg_miles: float) -> List[float]:
         
         stops = []
@@ -108,16 +129,13 @@ class HOSPlanner:
                 new_events.append(ev)
         return new_events
 
-    def generate_daily_logs(self) :
-        
+    def generate_daily_logs(self):
         daily_logs = []
         remaining_events = self.events.copy()
-        flag_limit = False
-        # Rolling window: remaining budget = 70*60 - cycle_used_min
         total_budget_min = MAX_CYCLE_HOURS * 60
         remaining_budget_min = total_budget_min - self.cycle_used_min
+        flag_limit = False
         if remaining_budget_min < 0:
-            # Already over 70h – no driving allowed
             return [{
                 "date": self.start_datetime.strftime("%Y-%m-%d"),
                 "segments": [],
@@ -126,133 +144,107 @@ class HOSPlanner:
                 "driving_hours": 0.0,
                 "remarks": "Already exceed 70h/8d limit. No driving allowed.",
                 "warning": f"Already over 70h by {-remaining_budget_min/60:.1f}h"
-            }], flag_limit
+            }], True  
 
-        day_idx = 0
+        # Absolute minutes from the trip start (midnight of first day)
+        absolute_minutes = 0
+        current_shift_start_abs = 6 * 60   # first shift starts at 6:00 on day 0
         day_date = self.start_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
-        previous_shift_end_min = None   # minutes within that day
-        next_shift_start_min = None     # for the next day
-        shift_start_min= 0
+        day_idx = 0
+
         while remaining_events and remaining_budget_min > 0:
-            # --- Determine shift start time ---
-            if day_idx == 0:
-                shift_start_min = 6 * 60   # 6:00 AM
-            else:
-                shift_start_min = next_shift_start_min
-
-            # Build timeline for this day
+            shift_start = current_shift_start_abs % 1440
             timeline = []
-            # Add off-duty from midnight to shift start
-            if shift_start_min > 0:
-                timeline.append((0, "off_duty", shift_start_min, 0.0, None))
-
-            current_time_min = shift_start_min
-            day_drive_min = 0.0
-            day_on_duty_min = 0.0
-            day_miles = 0.0
-
-            # Process events until day limits reached
+            if shift_start > 0:
+                timeline.append((0, "off_duty", shift_start, 0.0, None))
+            current_abs = current_shift_start_abs
+            day_drive = 0
+            day_on = 0
+            day_miles = 0
             next_remaining = []
             i = 0
+            window_end_abs = (current_shift_start_abs // 1440) * 1440 + (current_shift_start_abs % 1440) + MAX_WINDOW_HOURS * 60
+
             while i < len(remaining_events):
                 ev_type, dur_min, leg_idx, miles = remaining_events[i]
 
                 if ev_type == "drive":
                     # 11‑hour limit
-                    if day_drive_min + dur_min > MAX_DRIVE_HOURS * 60:
-                        allowed = MAX_DRIVE_HOURS * 60 - day_drive_min
+                    if day_drive + dur_min > MAX_DRIVE_HOURS * 60:
+                        allowed = MAX_DRIVE_HOURS * 60 - day_drive
                         if allowed > 0:
                             ratio = allowed / dur_min
                             allowed_miles = miles * ratio
-                            timeline.append((current_time_min, "driving", allowed, allowed_miles, None))
-                            current_time_min += allowed
-                            day_drive_min += allowed
-                            day_on_duty_min += allowed
+                            timeline.append((current_abs % 1440, "driving", allowed, allowed_miles, None))
+                            current_abs += allowed
+                            day_drive += allowed
+                            day_on += allowed
                             day_miles += allowed_miles
                             # Remaining part of this drive
-                            remaining_miles = miles - allowed_miles
-                            remaining_min = dur_min - allowed
-                            next_remaining.append(("drive", remaining_min, leg_idx, remaining_miles))
-                        # All subsequent events go to next day
+                            remaining_drive = ("drive", dur_min - allowed, leg_idx, miles - allowed_miles)
+                            next_remaining.append(remaining_drive)
                         next_remaining.extend(remaining_events[i+1:])
                         break
 
                     # 14‑hour window
-                    window_end = shift_start_min + MAX_WINDOW_HOURS * 60
-                    if current_time_min + dur_min > window_end:
-                        allowed = window_end - current_time_min
+                    if current_abs + dur_min > window_end_abs:
+                        allowed = window_end_abs - current_abs
                         if allowed > 0:
                             ratio = allowed / dur_min
                             allowed_miles = miles * ratio
-                            timeline.append((current_time_min, "driving", allowed, allowed_miles, None))
-                            current_time_min += allowed
-                            day_drive_min += allowed
-                            day_on_duty_min += allowed
+                            timeline.append((current_abs % 1440, "driving", allowed, allowed_miles, None))
+                            current_abs += allowed
+                            day_drive += allowed
+                            day_on += allowed
                             day_miles += allowed_miles
-                            remaining_miles = miles - allowed_miles
-                            remaining_min = dur_min - allowed
-                            next_remaining.append(("drive", remaining_min, leg_idx, remaining_miles))
+                            remaining_drive = ("drive", dur_min - allowed, leg_idx, miles - allowed_miles)
+                            next_remaining.append(remaining_drive)
                         next_remaining.extend(remaining_events[i+1:])
                         break
 
                     # Whole drive fits
-                    timeline.append((current_time_min, "driving", dur_min, miles, None))
-                    current_time_min += dur_min
-                    day_drive_min += dur_min
-                    day_on_duty_min += dur_min
+                    timeline.append((current_abs % 1440, "driving", dur_min, miles, None))
+                    current_abs += dur_min
+                    day_drive += dur_min
+                    day_on += dur_min
                     day_miles += miles
 
-                else:  # non-driving (pickup, dropoff, fuel, break)
-                    window_end = shift_start_min + MAX_WINDOW_HOURS * 60
-                    if current_time_min + dur_min > window_end:
-                        # Does not fit – move everything from here onward
+                else:  # non‑driving event (pickup, dropoff, fuel, break)
+                    if current_abs + dur_min > window_end_abs:
                         next_remaining.extend(remaining_events[i:])
                         break
-                    status = "on_duty"
-                    timeline.append((current_time_min, status, dur_min, 0.0, ev_type))
-                    current_time_min += dur_min
-                    day_on_duty_min += dur_min
+                    timeline.append((current_abs % 1440, "on_duty", dur_min, 0.0, ev_type))
+                    current_abs += dur_min
+                    day_on += dur_min
 
                 i += 1
             else:
-                # All events consumed
                 next_remaining = []
 
-            # Add off-duty from end of shift to midnight
-            if current_time_min < 1440:
-                timeline.append((current_time_min, "off_duty", 1440 - current_time_min, 0.0, None))
+            # Off‑duty from end of shift to midnight
+            end_of_day_abs = ((current_abs // 1440) + 1) * 1440
+            if current_abs < end_of_day_abs:
+                off_duration = end_of_day_abs - current_abs
+                timeline.append((current_abs % 1440, "off_duty", off_duration, 0.0, None))
+                current_abs = end_of_day_abs
 
             # Build log sheet
-            log = self._build_log_sheet(day_date, timeline, day_drive_min, day_on_duty_min, day_miles)
-
-            # Update rolling budget
-            remaining_budget_min -= day_on_duty_min
+            log = self._build_log_sheet(day_date, timeline, day_drive, day_on, day_miles)
+            remaining_budget_min -= day_on
             if remaining_budget_min < 0:
                 log["warning"] = f"70h/8d limit exceeded by {-remaining_budget_min/60:.1f}h"
                 flag_limit = True
-                break
-            else:
-                log["warning"] = None
 
             daily_logs.append(log)
 
-            # Prepare for next day
+            # Prepare next day
             day_idx += 1
             day_date += timedelta(days=1)
-            previous_shift_end_min = current_time_min
             remaining_events = next_remaining
-
-            # Compute next shift start (after 10h rest)
-            if remaining_events:
-                next_start = current_time_min + 600   # 10 hours in minutes
-                if next_start >= 1440:
-                    next_shift_start_min = next_start - 1440
-                else:
-                    next_shift_start_min = next_start
-            else:
-                next_shift_start_min = None
+            current_shift_start_abs = current_abs + 600   # 10 hours rest
 
         return daily_logs,flag_limit
+    
     def get_route_stops(self) -> List[Dict[str, Any]]:
         stops = []
         cumulative_miles = 0.0
