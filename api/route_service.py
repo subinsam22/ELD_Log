@@ -21,7 +21,7 @@ class RouteService:
     def geocode(self, location: str):
         params = {"q": location, "format": "json", "limit": 1}
         try:
-            resp = self.session.get(self.GEOCODING_URL, params=params,headers={"User-Agent": "HOSApp"}, timeout=10)
+            resp = self.session.get(self.GEOCODING_URL, params=params,headers={"User-Agent": "TruckLogApp"}, timeout=10)
             resp.raise_for_status()
             data = resp.json()
             if not data:
